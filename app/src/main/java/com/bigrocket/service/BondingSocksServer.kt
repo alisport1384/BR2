@@ -345,11 +345,25 @@ class BondingSocksServer(
         var receiverJob: Job? = null
 
         fun bindPinnedSocket(network: Network): DatagramSocket? = runCatching {
-            val s = DatagramSocket()
-            if (!vpnService.protect(s)) { s.close(); return@runCatching null }
+            // Network.bindSocket() must be applied before the socket is connected.
+            // Keep the socket unbound until Android has attached it to the selected
+            // physical Network; otherwise the kernel can retain the default-network
+            // routing decision made during the initial wildcard bind.
+            val s = DatagramSocket(null)
+            if (!vpnService.protect(s)) {
+                s.close()
+                return@runCatching null
+            }
             network.bindSocket(s)
+            s.bind(InetSocketAddress(0))
             s.soTimeout = UDP_RECEIVE_TIMEOUT_MS
             s
+        }.onFailure { error ->
+            AppLogger.logError(
+                "Path3",
+                "UDP ASSOCIATE physical socket bind failed for ${path3Router.describeNetwork(network)}",
+                error,
+            )
         }.getOrNull()
 
         fun startPinnedReceiver(socket: DatagramSocket, host: String, port: Int, clientAddr: InetSocketAddress): Job =
