@@ -366,7 +366,7 @@ class BondingSocksServer(
             )
         }.getOrNull()
 
-        fun startPinnedReceiver(socket: DatagramSocket, host: String, port: Int, clientAddr: InetSocketAddress): Job =
+        fun startPinnedReceiver(socket: DatagramSocket, clientAddr: InetSocketAddress): Job =
             scope.launch {
                 val respBuf = ByteArray(64 * 1024)
                 try {
@@ -379,7 +379,17 @@ class BondingSocksServer(
                         } catch (_: Exception) {
                             break
                         }
-                        val encoded = encodeSocksUdp(host, port, resp.data.copyOf(resp.length))
+                        val source = resp.socketAddress as? InetSocketAddress ?: continue
+                        // SOCKS5 UDP replies must carry the actual remote source address.
+                        // Aether probes many WireGuard endpoints concurrently through the same
+                        // UDP ASSOCIATE; echoing the first request's destination here makes every
+                        // response look as if it came from that one endpoint, so the prober cannot
+                        // match a handshake/data-plane response to the endpoint that produced it.
+                        val encoded = encodeSocksUdp(
+                            source.address.hostAddress,
+                            source.port,
+                            resp.data.copyOf(resp.length),
+                        )
                         runCatching { localUdp.send(DatagramPacket(encoded, encoded.size, clientAddr)) }
                         TrafficStats.recordBytes(resp.length)
                     }
@@ -447,7 +457,7 @@ class BondingSocksServer(
                     val socket = bindPinnedSocket(network) ?: continue
                     pinnedSocket = socket
                     activeRelays[relayId]?.network = network
-                    receiverJob = startPinnedReceiver(socket, decoded.host, decoded.port, fromAddr)
+                    receiverJob = startPinnedReceiver(socket, fromAddr)
                 }
                 val socket = pinnedSocket ?: continue
                 runCatching {
