@@ -496,6 +496,8 @@ class BondingSocksServer(
         }
     }
 
+    private data class DecodedUdp(val host: String, val port: Int, val payload: ByteArray)
+
     private fun decodeSocksUdp(data: ByteArray, length: Int): DecodedUdp? {
         if (length < 4) return null
         if (data[0].toInt() != 0 || data[1].toInt() != 0) return null
