@@ -59,6 +59,7 @@ class BondingSocksServer(
 
     @Volatile private var wifiWeight = 50
     @Volatile private var cellularWeight = 50
+    @Volatile private var upstreamMode = UpstreamMode.NONE
 
     private val relayIdCounter = AtomicInteger(0)
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -105,6 +106,10 @@ class BondingSocksServer(
         wifiWeight = wifiW
         cellularWeight = cellularW
         path3Router.updateWeights(wifiW, cellularW)
+    }
+
+    fun setUpstreamMode(mode: UpstreamMode) {
+        upstreamMode = mode
     }
 
     /** Mirrors TunPacketRouter.notifySoftFailure: evict every relay pinned to [deadNetwork]
@@ -217,13 +222,21 @@ class BondingSocksServer(
         destHost: String,
         destPort: Int,
     ) {
+        val mode = upstreamMode
         val remote: Socket
         val network: Network?
         try {
-            // This server is the physical Path-3 boundary for Aether. It must ALWAYS
-            // dial the selected Wi-Fi/Cellular Network directly. Routing back through
-            // Aether here would create an Aether -> Path-3 -> Aether recursion.
-            val picked = pickBestNetwork() ?: throw IOException("No usable network")
+            if (mode == UpstreamMode.AETHER) {
+                network = null
+                remote = AetherUpstream.openTcp(vpnService, destHost, destPort)
+            } else {
+                // pickBestNetwork(), not pickNetwork(): this branch only ever carries Aether's
+                // own outbound connections (this server instance is Aether's dedicated
+                // upstreamProxy - see BigRocketVpnService/EmbeddedAetherRuntime), and a
+                // GOOL/TCP tunnel is one long-lived connection for the whole session, same as
+                // the UDP-associate case above - a single weighted-random sample would just as
+                // often pin the whole session to the low-weight path. See pickBestNetwork's doc.
+                val picked = pickBestNetwork() ?: throw IOException("No usable network")
                 AppLogger.log(
                     "Path3",
                     "TCP CONNECT pin chosen=${path3Router.describeNetwork(picked)} wifiWeight=$wifiWeight cellularWeight=$cellularWeight dest=$destHost:$destPort",
@@ -249,8 +262,9 @@ class BondingSocksServer(
                     ?: throw IOException("DNS resolution failed for $destHost on ${path3Router.describeNetwork(picked)}")
                 AppLogger.log("Path3", "resolved $destHost -> ${resolved.hostAddress} via ${path3Router.describeNetwork(picked)}")
                 socket.connect(InetSocketAddress(resolved, destPort), CONNECT_TIMEOUT_MS)
-            socket.soTimeout = RELAY_READ_TIMEOUT_MS
-            remote = socket
+                socket.soTimeout = RELAY_READ_TIMEOUT_MS
+                remote = socket
+            }
         } catch (_: Exception) {
             runCatching { clientOut.write(socksReply(0x01)); clientOut.flush() }
             closeQuietly(client)
@@ -317,17 +331,27 @@ class BondingSocksServer(
         val localUdp = DatagramSocket(0, InetAddress.getByName("127.0.0.1"))
         vpnService.protect(localUdp)
         AppLogger.log("Path3", "UDP ASSOCIATE opened, localUdp bound to 127.0.0.1:${localUdp.localPort}")
+        val mode = upstreamMode
+        val aetherAssociation = if (mode == UpstreamMode.AETHER) {
+            try {
+                AetherUpstream.openUdp(vpnService)
+            } catch (_: Exception) {
+                null
+            }
+        } else null
+
         val reply = socksReply(0x00, InetAddress.getByName("127.0.0.1"), localUdp.localPort)
         try {
             clientOut.write(reply)
             clientOut.flush()
         } catch (_: Exception) {
             runCatching { localUdp.close() }
+            runCatching { aetherAssociation?.close() }
             closeQuietly(client)
             return
         }
 
-        // Single-path state for the real-dial (NONE-mode, true) branch:
+        // Single-path state for the real-dial (NONE-mode, aetherAssociation == null) branch:
         // exactly one raw socket, bound once via the same deterministic pickBestNetwork() the
         // TCP CONNECT branch uses, for this association's entire lifetime.
         //
@@ -405,6 +429,7 @@ class BondingSocksServer(
         activeRelays[relayId] = ActiveRelay(null) {
             runCatching { client.close() }
             runCatching { localUdp.close() }
+            runCatching { aetherAssociation?.close() }
             runCatching { pinnedSocket?.close() }
             receiverJob?.cancel()
         }
@@ -434,6 +459,16 @@ class BondingSocksServer(
                 }
                 val fromAddr = packet.socketAddress as? InetSocketAddress ?: continue
 
+                if (aetherAssociation != null) {
+                    runCatching { aetherAssociation.send(decoded.host, decoded.port, decoded.payload) }
+                    val received = runCatching { aetherAssociation.receive(buffer) }.getOrNull()
+                    if (received != null) {
+                        val encoded = encodeSocksUdp(decoded.host, decoded.port, received.payload)
+                        runCatching { localUdp.send(DatagramPacket(encoded, encoded.size, fromAddr)) }
+                    }
+                    continue
+                }
+
                 if (pinnedSocket == null) {
                     val network = pickBestNetwork() ?: continue // both paths down - drop, same as before
                     AppLogger.log(
@@ -459,6 +494,7 @@ class BondingSocksServer(
             controlWatcher.cancel()
             activeRelays.remove(relayId)
             runCatching { localUdp.close() }
+            runCatching { aetherAssociation?.close() }
             runCatching { pinnedSocket?.close() }
             receiverJob?.cancel()
             closeQuietly(client)

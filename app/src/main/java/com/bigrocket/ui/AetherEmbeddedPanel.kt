@@ -15,14 +15,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import io.github.immaghzbad.aetherst.core.AetherController
-import io.github.immaghzbad.aetherst.model.ConnectionProfile
-import io.github.immaghzbad.aetherst.model.ConnectionState
-import io.github.immaghzbad.aetherst.model.isBusy
-import io.github.immaghzbad.aetherst.model.isConnected
-import io.github.immaghzbad.aetherst.ui.AdvancedPanel
-import io.github.immaghzbad.aetherst.ui.SharePanel
-import io.github.immaghzbad.aetherst.ui.components.ConnectionCard
+import studio.cluvex.aether.core.AetherController
+import studio.cluvex.aether.model.ConnectionProfile
+import studio.cluvex.aether.model.ConnectionState
+import studio.cluvex.aether.model.isBusy
+import studio.cluvex.aether.model.isConnected
+import studio.cluvex.aether.ui.AdvancedPanel
+import studio.cluvex.aether.ui.SharePanel
+import studio.cluvex.aether.ui.components.ConnectionCard
 
 @Composable
 fun AetherEmbeddedPanel(

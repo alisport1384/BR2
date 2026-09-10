@@ -5,7 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.os.Build
 import android.util.Log
-import io.github.immaghzbad.aetherst.core.DiagnosticsLog
+import studio.cluvex.aether.core.DiagnosticsLog
 import java.io.File
 
 class BigRocketApp : Application() {

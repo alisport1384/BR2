@@ -9,15 +9,15 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import io.github.immaghzbad.aetherst.core.AetherController
-import io.github.immaghzbad.aetherst.core.AetherProcess
-import io.github.immaghzbad.aetherst.core.EngineMeta
-import io.github.immaghzbad.aetherst.core.PortProbe
-import io.github.immaghzbad.aetherst.core.NetProbe
-import io.github.immaghzbad.aetherst.core.TunnelConfig
-import io.github.immaghzbad.aetherst.data.ProfileStore
-import io.github.immaghzbad.aetherst.model.ConnectionProfile
-import io.github.immaghzbad.aetherst.model.ConnectionState
+import studio.cluvex.aether.core.AetherController
+import studio.cluvex.aether.core.AetherProcess
+import studio.cluvex.aether.core.EngineMeta
+import studio.cluvex.aether.core.PortProbe
+import studio.cluvex.aether.core.NetProbe
+import studio.cluvex.aether.core.TunnelConfig
+import studio.cluvex.aether.data.ProfileStore
+import studio.cluvex.aether.model.ConnectionProfile
+import studio.cluvex.aether.model.ConnectionState
 
 /** Runs Aether in embedded proxy mode so BigRocket remains the only Android VPN. */
 object EmbeddedAetherRuntime {
@@ -70,7 +70,7 @@ object EmbeddedAetherRuntime {
                     TunnelConfig.SOCKS_HOST,
                     TunnelConfig.SOCKS_PORT,
                 )
-                AetherController.setIpInfo(ip?.let { io.github.immaghzbad.aetherst.core.IpEndpoint(it.ip, it.countryCode, true) })
+                AetherController.setIpInfo(ip?.let { studio.cluvex.aether.core.IpEndpoint(it.ip, it.countryCode, true) })
                 AetherController.setIpLoading(false)
                 AetherController.setState(ConnectionState.Connected("${TunnelConfig.SOCKS_HOST}:${TunnelConfig.SOCKS_PORT}"))
                 _trafficReady.value = true

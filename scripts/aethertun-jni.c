@@ -5,7 +5,7 @@
  *
  * The app used to System.loadLibrary("hev-socks5-tunnel") and rely on hev's
  * bundled hev-jni.c (built with -DPKGNAME=...) to register the TProxy*
- * natives onto io.github.immaghzbad.aetherst.core.TProxyService. That coupled the
+ * natives onto studio.cluvex.aether.core.TProxyService. That coupled the
  * Kotlin declarations to WHATEVER JNI signatures the upstream default branch
  * happens to use. Upstream then changed TProxyStartService from
  * '(Ljava/lang/String;I)V' to '(Ljava/lang/String;I)Z', RegisterNatives
@@ -104,7 +104,7 @@ tunnel_thread(void *data)
 }
 
 JNIEXPORT jboolean JNICALL
-Java_io_github_immaghzbad_aetherst_core_TProxyService_TProxyStartService(JNIEnv *env,
+Java_studio_cluvex_aether_core_TProxyService_TProxyStartService(JNIEnv *env,
                                                                 jclass clazz,
                                                                 jstring config_path,
                                                                 jint tun_fd)
@@ -163,7 +163,7 @@ fail:
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_immaghzbad_aetherst_core_TProxyService_TProxyStopService(JNIEnv *env, jclass clazz)
+Java_studio_cluvex_aether_core_TProxyService_TProxyStopService(JNIEnv *env, jclass clazz)
 {
     (void)env;
     (void)clazz;
@@ -171,7 +171,7 @@ Java_io_github_immaghzbad_aetherst_core_TProxyService_TProxyStopService(JNIEnv *
 }
 
 JNIEXPORT jlongArray JNICALL
-Java_io_github_immaghzbad_aetherst_core_TProxyService_TProxyGetStats(JNIEnv *env, jclass clazz)
+Java_studio_cluvex_aether_core_TProxyService_TProxyGetStats(JNIEnv *env, jclass clazz)
 {
     size_t tx_packets = 0, tx_bytes = 0, rx_packets = 0, rx_bytes = 0;
     jlong values[4];

@@ -6,7 +6,7 @@
     <color name="black">#000000</color>
     <color name="white">#FFFFFF</color>
 
-    <!-- Reused from io.github.immaghzbad.aetherst.ui.theme.Color.kt so BigRocket's own screen
+    <!-- Reused from studio.cluvex.aether.ui.theme.Color.kt so BigRocket's own screen
          (plain View/XML, not Compose) matches Aether's panel pixel-for-pixel instead of
          inventing a second, slightly-different palette. -->
     <color name="br_card_surface">#16203A</color>

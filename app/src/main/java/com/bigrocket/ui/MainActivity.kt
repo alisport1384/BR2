@@ -31,8 +31,8 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import io.github.immaghzbad.aetherst.data.ProfileStore
-import io.github.immaghzbad.aetherst.model.ConnectionProfile
+import studio.cluvex.aether.data.ProfileStore
+import studio.cluvex.aether.model.ConnectionProfile
 import com.bigrocket.service.EmbeddedAetherRuntime
 import com.bigrocket.service.DynamicWeightCalculator
 import com.bigrocket.service.NetworkPreferenceStore
@@ -218,12 +218,12 @@ class MainActivity : AppCompatActivity() {
             // stock purple) - completely disconnected both from BigRocket's own
             // window theme (Theme.AetherMobile / colors.xml: aether_background
             // #0A0E1A, aether_primary #4C8DFF, already the Aether navy palette) and
-            // from Aether's own theme, which uses AetherTheme).
+            // from Aether's own screens (HomeScreen etc., which use AetherTheme).
             // That's exactly why this embedded panel visually clashed with the rest
             // of the app. AetherTheme is the same theme Aether's own UI uses, so this
             // panel now matches it - and therefore matches BigRocket, since BigRocket
             // was already themed to Aether's own palette.
-            io.github.immaghzbad.aetherst.ui.theme.AetherTheme {
+            studio.cluvex.aether.ui.theme.AetherTheme {
                 Surface {
                     AetherEmbeddedPanel(
                         profile = aetherProfile,

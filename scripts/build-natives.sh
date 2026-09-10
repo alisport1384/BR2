@@ -199,9 +199,9 @@ build_hev() {
     bridgesyms="$("${NDK_TOOLCHAIN}/llvm-nm" --dynamic --defined-only "${bridge_out}" 2>/dev/null || true)"
     for sym in \
       JNI_OnLoad \
-      Java_io_github_immaghzbad_aetherst_core_TProxyService_TProxyStartService \
-      Java_io_github_immaghzbad_aetherst_core_TProxyService_TProxyStopService \
-      Java_io_github_immaghzbad_aetherst_core_TProxyService_TProxyGetStats; do
+      Java_studio_cluvex_aether_core_TProxyService_TProxyStartService \
+      Java_studio_cluvex_aether_core_TProxyService_TProxyStopService \
+      Java_studio_cluvex_aether_core_TProxyService_TProxyGetStats; do
       if ! echo "${bridgesyms}" | grep -qw "${sym}"; then
         echo "ERROR: [${abi}] libaethertun.so lacks ${sym} — Kotlin externals would not resolve." >&2
         exit 1

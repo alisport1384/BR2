@@ -28,9 +28,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
-import io.github.immaghzbad.aetherst.core.DiagnosticsLog
-import io.github.immaghzbad.aetherst.core.HevConfig
-import io.github.immaghzbad.aetherst.core.HevTunnel
+import studio.cluvex.aether.core.DiagnosticsLog
+import studio.cluvex.aether.core.HevConfig
+import studio.cluvex.aether.core.HevTunnel
 
 /**
  * Core VPN service.
@@ -107,7 +107,7 @@ class BigRocketVpnService : VpnService(), NetworkMonitor.NetworkStateListener {
     )
     // Which packet engine currently owns the TUN fd: the existing JVM router
     // (TunPacketRouter, handles both direct/NONE bonding and JVM-relayed AETHER
-    // upstream), or the native hev-socks5-tunnel bridge (io.github.immaghzbad.aetherst.core.
+    // upstream), or the native hev-socks5-tunnel bridge (studio.cluvex.aether.core.
     // HevTunnel), which - EXPLORATORY, see applyUpstreamMode's comment - replaces the
     // JVM router entirely while active. Only one may ever read the TUN fd at a time.
     @Volatile private var usingHevEngine = false
@@ -365,7 +365,6 @@ class BigRocketVpnService : VpnService(), NetworkMonitor.NetworkStateListener {
                 // moment forces a tie, and a tie must never be settled by chance - see
                 // pickBestNetwork().
                 DynamicWeightCalculator.currentWeights().let { w -> it.updateWeights(w.wifiWeight, w.cellularWeight) }
-                it.setUpstreamMode(UpstreamMode.NONE)
                 it.start()
                 AppLogger.log("Path3", "Aether input <- Path3 SOCKS")
             }

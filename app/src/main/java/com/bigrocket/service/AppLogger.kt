@@ -75,7 +75,7 @@ object AppLogger {
     /** Full exported text - reads the persisted file when one exists (covers everything since
      *  logging was turned on, including across a process restart), falling back to the
      *  in-memory buffer only if the file is missing/unreadable for some reason. Also appends
-     *  the existing Aether-side [io.github.immaghzbad.aetherst.core.DiagnosticsLog] (tunnel engine
+     *  the existing Aether-side [studio.cluvex.aether.core.DiagnosticsLog] (tunnel engine
      *  switches, crash-survival lines - already being recorded unconditionally today,
      *  independent of this class's own on/off switch) so a single export has both. */
     fun exportText(): String {
@@ -87,7 +87,7 @@ object AppLogger {
             }
             synchronized(memoryBuffer) { memoryBuffer.joinToString("\n") }
         }
-        val tunnelLog = runCatching { io.github.immaghzbad.aetherst.core.DiagnosticsLog.exportText() }.getOrDefault("")
+        val tunnelLog = runCatching { studio.cluvex.aether.core.DiagnosticsLog.exportText() }.getOrDefault("")
         return buildString {
             append("== BigRocket log ==\n")
             append(ownLog)
