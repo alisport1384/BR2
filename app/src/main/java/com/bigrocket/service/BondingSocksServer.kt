@@ -20,6 +20,7 @@ import java.net.Socket
 import java.net.SocketTimeoutException
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Local SOCKS5 server that [HevTunnel] (hev-socks5-tunnel, a real userspace TCP/IP stack)
@@ -322,52 +323,43 @@ class BondingSocksServer(
             return
         }
 
-        // Single-path state for the real-dial (NONE-mode, aetherAssociation == null) branch:
-        // exactly one raw socket, bound once via the same deterministic pickBestNetwork() the
-        // TCP CONNECT branch uses, for this association's entire lifetime.
-        //
-        // This branch carries Aether's own WireGuard/GOOL tunnel (BondingSocksServer is
-        // Aether's configured upstreamProxy - see EmbeddedAetherRuntime). An earlier version
-        // of this code alternated the source socket per outgoing packet on the theory that
-        // WireGuard tolerates roaming (it identifies a peer by session key, not source IP).
-        // That assumption is true for the CLIENT's outbound side but not for the resulting
-        // downlink: a roaming-capable peer sends ALL return traffic to whichever source
-        // address it most recently saw a valid packet from - a single "current endpoint",
-        // not both at once. Alternating the source every packet made the server's notion of
-        // "current endpoint" thrash on every packet, so the download direction (the bulk of
-        // any real transfer) collapsed onto whichever path happened to win that race - in
-        // practice mostly Wi-Fi - which is exactly the single-path-saturation symptom this
-        // was meant to fix. Pinning one physical path per association removes the thrash;
-        // weight is honored across associations/reconnects instead of within one, the same
-        // flow-level granularity already used everywhere else in this file and in
-        // TunPacketRouter.
-        var pinnedSocket: DatagramSocket? = null
-        var receiverJob: Job? = null
+        // Core 1.7.0 probes several WireGuard endpoints concurrently. Keep one physical
+        // UDP socket per destination for the lifetime of this SOCKS association. This gives
+        // every endpoint a stable source port while still allowing the Android Network binding
+        // to be explicit. A single shared socket is legal SOCKS5, but it makes concurrent
+        // WireGuard endpoint probing share one kernel UDP flow and makes return-path attribution
+        // unnecessarily fragile on Android multi-network routing.
+        data class PhysicalUdpRelay(
+            val network: Network,
+            val socket: DatagramSocket,
+            val receiver: Job,
+        )
 
-        fun bindPinnedSocket(network: Network): DatagramSocket? = runCatching {
-            // Network.bindSocket() must be applied before the socket is connected.
-            // Keep the socket unbound until Android has attached it to the selected
-            // physical Network; otherwise the kernel can retain the default-network
-            // routing decision made during the initial wildcard bind.
-            val s = DatagramSocket(null)
-            if (!vpnService.protect(s)) {
-                s.close()
-                return@runCatching null
-            }
-            network.bindSocket(s)
-            s.bind(InetSocketAddress(0))
-            s.soTimeout = UDP_RECEIVE_TIMEOUT_MS
-            s
-        }.onFailure { error ->
-            AppLogger.logError(
-                "Path3",
-                "UDP ASSOCIATE physical socket bind failed for ${path3Router.describeNetwork(network)}",
-                error,
-            )
-        }.getOrNull()
+        val relays = ConcurrentHashMap<String, PhysicalUdpRelay>()
+        val controlWatcher: Job
+        var currentClientAddr: InetSocketAddress = InetSocketAddress("127.0.0.1", 0)
 
-        fun startPinnedReceiver(socket: DatagramSocket, clientAddr: InetSocketAddress): Job =
-            scope.launch {
+        fun createRelay(network: Network, destination: InetSocketAddress): PhysicalUdpRelay? {
+            val socket = runCatching {
+                val s = DatagramSocket(null)
+                if (!vpnService.protect(s)) {
+                    s.close()
+                    throw IOException("Unable to protect UDP socket from VPN")
+                }
+                network.bindSocket(s)
+                s.bind(InetSocketAddress(0))
+                s.connect(destination)
+                s.soTimeout = UDP_RECEIVE_TIMEOUT_MS
+                s
+            }.onFailure { error ->
+                AppLogger.logError(
+                    "Path3",
+                    "UDP relay bind failed for ${path3Router.describeNetwork(network)} dest=${destination.hostString}:${destination.port}",
+                    error,
+                )
+            }.getOrNull() ?: return null
+
+            val receiver = scope.launch {
                 val respBuf = ByteArray(64 * 1024)
                 try {
                     while (isActive && !socket.isClosed) {
@@ -379,28 +371,38 @@ class BondingSocksServer(
                         } catch (_: Exception) {
                             break
                         }
-                        val source = resp.socketAddress as? InetSocketAddress ?: continue
-                        // SOCKS5 UDP replies must carry the actual remote source address.
-                        // Aether probes many WireGuard endpoints concurrently through the same
-                        // UDP ASSOCIATE; echoing the first request's destination here makes every
-                        // response look as if it came from that one endpoint, so the prober cannot
-                        // match a handshake/data-plane response to the endpoint that produced it.
+                        val source = resp.socketAddress as? InetSocketAddress ?: destination
                         val encoded = encodeSocksUdp(
                             source.address.hostAddress,
                             source.port,
                             resp.data.copyOf(resp.length),
                         )
-                        runCatching { localUdp.send(DatagramPacket(encoded, encoded.size, clientAddr)) }
+                        // Aether's UDP socket is the source of the SOCKS association packet.
+                        // Capture it once in the outer loop and send every response back there.
+                        runCatching {
+                            localUdp.send(DatagramPacket(encoded, encoded.size, currentClientAddr))
+                        }
                         TrafficStats.recordBytes(resp.length)
                     }
                 } catch (_: Exception) {
                 }
             }
+            return PhysicalUdpRelay(network, socket, receiver)
+        }
 
-        // TUN ASSOCIATE lives for as long as the SOCKS5 control TCP connection stays open -
-        // this small watcher just closes the UDP side (and unblocks the receive loop below)
-        // the moment hev drops it, matching standard SOCKS5 UDP ASSOCIATE semantics.
-        val controlWatcher = scope.launch {
+        val activeRelayNetwork = AtomicReference<Network?>(null)
+
+        activeRelays[relayId] = ActiveRelay(null) {
+            runCatching { client.close() }
+            runCatching { localUdp.close() }
+            relays.values.toList().forEach {
+                runCatching { it.receiver.cancel() }
+                runCatching { it.socket.close() }
+            }
+            relays.clear()
+        }
+
+        controlWatcher = scope.launch {
             try {
                 val buf = ByteArray(1)
                 while (client.getInputStream().read(buf) >= 0) { /* control channel stays open */ }
@@ -410,20 +412,10 @@ class BondingSocksServer(
             }
         }
 
-        // Registered once the pinned path is known (first packet); a soft-failure on that
-        // specific Network then tears this association down like any single-path relay,
-        // letting the tunnel reconnect and get a fresh weighted pick on the surviving path.
-        activeRelays[relayId] = ActiveRelay(null) {
-            runCatching { client.close() }
-            runCatching { localUdp.close() }
-            runCatching { aetherAssociation?.close() }
-            runCatching { pinnedSocket?.close() }
-            receiverJob?.cancel()
-        }
-
         val buffer = ByteArray(64 * 1024)
         var lastActivity = System.currentTimeMillis()
         localUdp.soTimeout = UDP_RECEIVE_TIMEOUT_MS
+        var firstPacket = true
         try {
             while (System.currentTimeMillis() - lastActivity < UDP_IDLE_TIMEOUT_MS) {
                 val packet = DatagramPacket(buffer, buffer.size)
@@ -435,34 +427,58 @@ class BondingSocksServer(
                     break
                 }
                 lastActivity = System.currentTimeMillis()
+                currentClientAddr = packet.socketAddress as? InetSocketAddress ?: currentClientAddr
                 val decoded = decodeSocksUdp(packet.data, packet.length) ?: continue
-                val fromAddr = packet.socketAddress as? InetSocketAddress ?: continue
+
+                if (firstPacket) {
+                    AppLogger.log(
+                        "Path3",
+                        "UDP ASSOCIATE active dest=${decoded.host}:${decoded.port} wifiWeight=$wifiWeight cellularWeight=$cellularWeight",
+                    )
+                    firstPacket = false
+                }
 
                 if (aetherAssociation != null) {
+                    // Retained for the legacy AETHER-mode branch. BigRocket's embedded
+                    // Aether path uses NONE here so that Path3 is the actual upstream boundary.
                     runCatching { aetherAssociation.send(decoded.host, decoded.port, decoded.payload) }
                     val received = runCatching { aetherAssociation.receive(buffer) }.getOrNull()
                     if (received != null) {
                         val encoded = encodeSocksUdp(decoded.host, decoded.port, received.payload)
-                        runCatching { localUdp.send(DatagramPacket(encoded, encoded.size, fromAddr)) }
+                        runCatching { localUdp.send(DatagramPacket(encoded, encoded.size, currentClientAddr)) }
                     }
                     continue
                 }
 
-                if (pinnedSocket == null) {
-                    val network = pickBestNetwork() ?: continue // both paths down - drop, same as before
-                    AppLogger.log(
-                        "Path3",
-                        "UDP ASSOCIATE pin chosen=${path3Router.describeNetwork(network)} wifiWeight=$wifiWeight cellularWeight=$cellularWeight dest=${decoded.host}:${decoded.port}",
-                    )
-                    val socket = bindPinnedSocket(network) ?: continue
-                    pinnedSocket = socket
-                    activeRelays[relayId]?.network = network
-                    receiverJob = startPinnedReceiver(socket, fromAddr)
+                val destination = runCatching {
+                    InetSocketAddress(InetAddress.getByName(decoded.host), decoded.port)
+                }.getOrNull() ?: continue
+                val key = "${destination.address.hostAddress}:${destination.port}"
+
+                val relay = relays[key] ?: run {
+                    val network = activeRelayNetwork.get() ?: pickBestNetwork() ?: continue
+                    activeRelayNetwork.compareAndSet(null, network)
+                    val chosen = activeRelayNetwork.get() ?: network
+                    val created = createRelay(chosen, destination) ?: continue
+                    relays.putIfAbsent(key, created)?.also { existing ->
+                        created.receiver.cancel()
+                        created.socket.close()
+                    } ?: created.also {
+                        activeRelays[relayId]?.network = chosen
+                        AppLogger.log(
+                            "Path3",
+                            "UDP endpoint relay created path=${path3Router.describeNetwork(chosen)} dest=$key",
+                        )
+                    }
                 }
-                val socket = pinnedSocket ?: continue
+
                 runCatching {
-                    val dest = InetSocketAddress(InetAddress.getByName(decoded.host), decoded.port)
-                    socket.send(DatagramPacket(decoded.payload, decoded.payload.size, dest))
+                    relay.socket.send(DatagramPacket(decoded.payload, decoded.payload.size))
+                }.onFailure {
+                    relays.remove(key)?.let {
+                        it.receiver.cancel()
+                        it.socket.close()
+                    }
                 }
                 TrafficStats.recordBytes(decoded.payload.size)
             }
@@ -471,13 +487,14 @@ class BondingSocksServer(
             activeRelays.remove(relayId)
             runCatching { localUdp.close() }
             runCatching { aetherAssociation?.close() }
-            runCatching { pinnedSocket?.close() }
-            receiverJob?.cancel()
+            relays.values.toList().forEach {
+                runCatching { it.receiver.cancel() }
+                runCatching { it.socket.close() }
+            }
+            relays.clear()
             closeQuietly(client)
         }
     }
-
-    private data class DecodedUdp(val host: String, val port: Int, val payload: ByteArray)
 
     private fun decodeSocksUdp(data: ByteArray, length: Int): DecodedUdp? {
         if (length < 4) return null
