@@ -35,30 +35,8 @@ jobs:
           sdkmanager --install "platforms;android-37.0" "build-tools;37.0.0" "ndk;26.3.11579264"
           yes | sdkmanager --licenses || true
 
-      - name: Set up Android NDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Rust toolchain and Android targets
-        shell: bash
-        run: |
-          rustup toolchain install stable --profile minimal
-          rustup default stable
-          rustup target add aarch64-linux-android
-          rustup target add armv7-linux-androideabi
-
-      - name: Install cargo-ndk
-        run: cargo install cargo-ndk --locked
-
-      - name: Prepare Aether native sources
-        run: |
-          chmod +x scripts/fetch-natives.sh scripts/build-natives.sh
-          scripts/fetch-natives.sh
-
-      - name: Build Aether native cores
-        env:
-          ANDROID_API: 26
-          ANDROID_NDK_HOME: ${{ env.ANDROID_SDK_ROOT }}/ndk/26.3.11579264
-        run: scripts/build-natives.sh all
+      # AetherST 1.6.9 native engines are bundled in app/src/main/jniLibs.
+      # No external native-source fetch/build step is required for this Android integration.
 
       - name: Grant Execute Permission to Gradle Wrapper
         run: chmod +x ./gradlew
