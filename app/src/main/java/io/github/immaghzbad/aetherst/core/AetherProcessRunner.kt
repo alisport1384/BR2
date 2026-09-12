@@ -117,6 +117,22 @@ class AetherProcessRunner(private val context: Context) {
                 commandList.add(routingFile.absolutePath)
             }
 
+            // Pass the selected AetherST profile explicitly. The upstream AetherST binary
+            // accepts these switches directly; relying only on environment variables makes
+            // embedded launches unnecessarily dependent on the binary's env parser.
+            if (config.protocol != AetherProtocol.ZERO_TRUST) {
+                commandList.add("--protocol")
+                commandList.add(config.protocol.rawValue)
+            }
+            commandList.add("--scan")
+            commandList.add(config.scanMode.rawValue)
+            commandList.add("--noize")
+            commandList.add(config.noise.rawValue)
+            if (config.perfProfile != AetherPerfProfile.AUTO) {
+                commandList.add("--perf")
+                commandList.add(config.perfProfile.rawValue)
+            }
+
             val effectiveIp = config.effectiveIpMode()
             commandList.add(
                 when (effectiveIp) {
