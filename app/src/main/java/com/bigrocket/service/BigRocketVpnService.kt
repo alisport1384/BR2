@@ -287,7 +287,6 @@ class BigRocketVpnService : VpnService(), NetworkMonitor.NetworkStateListener {
                 // moment forces a tie, and a tie must never be settled by chance - see
                 // pickBestNetwork().
                 DynamicWeightCalculator.currentWeights().let { w -> it.updateWeights(w.wifiWeight, w.cellularWeight) }
-                it.setUpstreamMode(UpstreamMode.NONE)
                 it.start()
                 AppLogger.log("Path3", "Aether input <- Path3 SOCKS")
             }

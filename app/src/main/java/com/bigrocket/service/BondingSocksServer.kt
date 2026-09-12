@@ -59,6 +59,7 @@ class BondingSocksServer(
 
     @Volatile private var wifiWeight = 50
     @Volatile private var cellularWeight = 50
+    @Volatile private var upstreamMode = UpstreamMode.NONE
 
     private val relayIdCounter = AtomicInteger(0)
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -105,6 +106,10 @@ class BondingSocksServer(
         wifiWeight = wifiW
         cellularWeight = cellularW
         path3Router.updateWeights(wifiW, cellularW)
+    }
+
+    fun setUpstreamMode(mode: UpstreamMode) {
+        upstreamMode = mode
     }
 
     /** Mirrors TunPacketRouter.notifySoftFailure: evict every relay pinned to [deadNetwork]
@@ -217,9 +222,14 @@ class BondingSocksServer(
         destHost: String,
         destPort: Int,
     ) {
+        val mode = upstreamMode
         val remote: Socket
         val network: Network?
         try {
+            if (mode == UpstreamMode.AETHER) {
+                network = null
+                remote = AetherSTUpstream.openTcp(vpnService, destHost, destPort)
+            } else {
                 // pickBestNetwork(), not pickNetwork(): this branch only ever carries Aether's
                 // own outbound connections (this server instance is Aether's dedicated
                 // upstreamProxy - see BigRocketVpnService/EmbeddedAetherRuntime), and a
@@ -254,6 +264,7 @@ class BondingSocksServer(
                 socket.connect(InetSocketAddress(resolved, destPort), CONNECT_TIMEOUT_MS)
                 socket.soTimeout = RELAY_READ_TIMEOUT_MS
                 remote = socket
+            }
         } catch (_: Exception) {
             runCatching { clientOut.write(socksReply(0x01)); clientOut.flush() }
             closeQuietly(client)
@@ -320,7 +331,14 @@ class BondingSocksServer(
         val localUdp = DatagramSocket(0, InetAddress.getByName("127.0.0.1"))
         vpnService.protect(localUdp)
         AppLogger.log("Path3", "UDP ASSOCIATE opened, localUdp bound to 127.0.0.1:${localUdp.localPort}")
-        val aetherAssociation: AetherSTUpstream.UdpAssociation? = null
+        val mode = upstreamMode
+        val aetherAssociation = if (mode == UpstreamMode.AETHER) {
+            try {
+                AetherSTUpstream.openUdp(vpnService)
+            } catch (_: Exception) {
+                null
+            }
+        } else null
 
         val reply = socksReply(0x00, InetAddress.getByName("127.0.0.1"), localUdp.localPort)
         try {

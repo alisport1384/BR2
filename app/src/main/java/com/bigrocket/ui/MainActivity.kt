@@ -244,17 +244,7 @@ class MainActivity : AppCompatActivity() {
         renderUpstreamChoice()
         if (choice != UpstreamChoice.AETHER) EmbeddedAetherRuntime.stop(this)
         if (!BondingStatus.state.value.isServiceActive) return
-        // Do not launch Aether against the pre-health-check network snapshot.
-        // Path 3 must have a verified usable physical path first; otherwise the single
-        // long-lived Aether upstream can be pinned to a path that is about to fail.
-        val state = BondingStatus.state.value
-        if (choice == UpstreamChoice.AETHER &&
-            state.path3Connected &&
-            state.mode != BondingMode.IDLE &&
-            !EmbeddedAetherRuntime.isRunning()
-        ) {
-            EmbeddedAetherRuntime.start(this, aetherConfig)
-        }
+        if (choice == UpstreamChoice.AETHER) EmbeddedAetherRuntime.start(this, aetherConfig)
     }
 
     private fun renderUpstreamChoice() {
@@ -312,12 +302,7 @@ class MainActivity : AppCompatActivity() {
 
                 isVpnRunning = state.isServiceActive
                 if (isVpnRunning) {
-                    if (upstreamChoice == UpstreamChoice.AETHER &&
-                        state.isServiceActive &&
-                        state.path3Connected &&
-                        state.mode != BondingMode.IDLE &&
-                        !EmbeddedAetherRuntime.isRunning()
-                    ) {
+                    if (upstreamChoice == UpstreamChoice.AETHER && !EmbeddedAetherRuntime.isRunning()) {
                         EmbeddedAetherRuntime.start(this@MainActivity, aetherConfig)
                     }
                 } else {
