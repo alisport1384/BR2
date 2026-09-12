@@ -3,6 +3,7 @@ package com.bigrocket.ui
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -419,7 +420,7 @@ private fun AboutTab() {
 }
 
 @Composable
-private fun PresetButton(title: String, active: Boolean, onClick: () -> Unit) {
+private fun RowScope.PresetButton(title: String, active: Boolean, onClick: () -> Unit) {
     if (active) Button(onClick = onClick, modifier = Modifier.weight(1f)) { Text(title) }
     else OutlinedButton(onClick = onClick, modifier = Modifier.weight(1f)) { Text(title) }
 }
@@ -501,7 +502,7 @@ private fun IntFieldSetting(label: String, value: Int, onChange: (Int) -> Unit) 
 }
 
 @Composable
-private fun <T> Selector(label: String, value: String, options: List<T>, onSelected: (T) -> Unit) {
+private fun <T : Any> Selector(label: String, value: String, options: List<T>, onSelected: (T) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth()) {
         Text(label, style = MaterialTheme.typography.labelMedium)
