@@ -1,7 +1,6 @@
 package io.github.immaghzbad.aetherst.core
 
 import android.content.Context
-import io.github.immaghzbad.aetherst.core.PsiphonController
 import io.github.immaghzbad.aetherst.shared.data.LogRepository
 import io.github.immaghzbad.aetherst.shared.model.*
 import kotlinx.coroutines.CancellationException
@@ -401,16 +400,7 @@ class AetherProcessRunner(private val context: Context) {
 
         val isBroken = lower.contains("broken pipe") || lower.contains("stream closed")
         if (isBroken) {
-            val cause = when {
-                lower.contains("upstream") || lower.contains("socks") -> "UPSTREAM_PSIHON_3080_CLOSED"
-                lower.contains("h2") || lower.contains("stream") -> "H2_STREAM_PEER_CLOSED"
-                else -> "BROKEN_PIPE_UNKNOWN"
-            }
-            LogRepository.e("[AetherCore] $cause: $line", "AetherCore")
-            if (!PsiphonController.isConnected()) {
-                LogRepository.e("[AetherCore] Psiphon upstream down; delaying reconnect 5s before retry", "AetherCore")
-                delay(5000.milliseconds)
-            }
+            LogRepository.e("[AetherCore] stream failure: $line", "AetherCore")
         } else {
             when {
                 lower.contains(" error ") || lower.contains("[error]") -> LogRepository.e(line, "AetherCore")
@@ -488,9 +478,6 @@ class AetherProcessRunner(private val context: Context) {
                     goolOuterValidated = false
                     dataPlaneOk = false
                     SocksGate.setReady(SocksReadiness.NOT_READY)
-                    if (PsiphonController.isConnected() && quickRetryPending.compareAndSet(false, true)) {
-                        LogRepository.i("[AetherCore] Cached gateway lost; scheduling single 3s quick retry (Psiphon up)", "AetherCore")
-                    }
                     updateState(ConnectionStatus.RECONNECTING, attemptId)
                     scope.launch {
                         delay(100.milliseconds)
